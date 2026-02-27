@@ -140,12 +140,33 @@ namespace StockDatasCollection.Forms
         // ============================================================
         // Tab 2 — 数据采集
         // ============================================================
+        /// <summary>
+        /// 判断当前时间是否在 A 股开盘时段：9:15-11:30、13:00-15:00。
+        /// </summary>
+        private static bool IsInTradingHours()
+        {
+            var now = DateTime.Now;
+            var t = now.TimeOfDay;
+            var morningStart = new TimeSpan(9, 15, 0);
+            var morningEnd = new TimeSpan(11, 30, 0);
+            var afternoonStart = new TimeSpan(13, 0, 0);
+            var afternoonEnd = new TimeSpan(15, 0, 0);
+            return (t >= morningStart && t <= morningEnd) || (t >= afternoonStart && t <= afternoonEnd);
+        }
+
         private void btnStartCollect_Click(object sender, EventArgs e)
         {
             var codes = _codeManager.GetAll();
             if (codes.Count == 0)
             {
                 MessageBox.Show("请先添加关注的股票代码。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (!IsInTradingHours())
+            {
+                MessageBox.Show("当前不在开盘时间段，无法开启自动采集。\n有效交易时间：9:15-11:30、13:00-15:00。",
+                    "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
@@ -185,7 +206,7 @@ namespace StockDatasCollection.Forms
                 if (codes.Count == 0) return;
 
                 var points = await _collector.FetchAsync(codes);
-                _cache.AddRange(points);
+                _cache.AddRangeDedupeByMinute(points);
                 _lastCollectTime = DateTime.Now;
                 _nextCollectTime = DateTime.Now.AddSeconds((int)nudCollectInterval.Value);
 

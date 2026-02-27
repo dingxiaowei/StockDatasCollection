@@ -37,6 +37,50 @@ namespace StockDatasCollection.Services
             }
         }
 
+        /// <summary>
+        /// 获取某条记录所属的“分钟”键：同一股票、同一交易日期、同一分钟视为同一分钟数据。
+        /// </summary>
+        private static string GetMinuteKey(StockDataPoint p)
+        {
+            string date = p.TradeDate ?? "";
+            string time = (p.TradeTime ?? "").Trim();
+            string minute = time.Length >= 5 ? time.Substring(0, 5) : time; // HH:mm
+            return p.StockCode + "|" + date + "|" + minute;
+        }
+
+        /// <summary>
+        /// 获取缓存中已存在的所有“分钟”键。
+        /// </summary>
+        private HashSet<string> GetExistingMinuteKeysLocked()
+        {
+            var keys = new HashSet<string>();
+            foreach (var list in _cache.Values)
+                foreach (var p in list)
+                    keys.Add(GetMinuteKey(p));
+            return keys;
+        }
+
+        /// <summary>
+        /// 按分钟去重：仅当该股票在该交易分钟尚无缓存记录时才加入，避免同一分钟重复采集。
+        /// </summary>
+        public void AddRangeDedupeByMinute(IEnumerable<StockDataPoint> points)
+        {
+            if (points == null) return;
+            lock (_lock)
+            {
+                var existing = GetExistingMinuteKeysLocked();
+                foreach (var p in points)
+                {
+                    string key = GetMinuteKey(p);
+                    if (existing.Contains(key)) continue;
+                    existing.Add(key);
+                    if (!_cache.ContainsKey(p.StockCode))
+                        _cache[p.StockCode] = new List<StockDataPoint>();
+                    _cache[p.StockCode].Add(p);
+                }
+            }
+        }
+
         /// <summary>Returns a snapshot of all cached data points across all stocks.</summary>
         public List<StockDataPoint> GetAll()
         {
