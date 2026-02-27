@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Timers;
+using System.Web;
 using System.Windows.Forms;
 using StockDatasCollection.IO;
 using StockDatasCollection.Models;
@@ -17,6 +19,9 @@ namespace StockDatasCollection.Forms
         private readonly StockDataCollector _collector = new StockDataCollector();
         private readonly DataCacheService _cache = new DataCacheService();
         private readonly ArchiveService _archiver = new ArchiveService();
+
+        // --- 分时K线图：最近一次加载的数据 ---
+        private List<StockDataPoint> _loadedPoints = new List<StockDataPoint>();
 
         // --- Timers ---
         private System.Timers.Timer _collectTimer;
@@ -44,6 +49,7 @@ namespace StockDatasCollection.Forms
             RefreshStockGrid();
             // Set default archive directory
             txtArchiveDir.Text = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Archives");
+            RefreshChartHtml();
         }
 
         private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
@@ -102,7 +108,7 @@ namespace StockDatasCollection.Forms
                         var updated = new StockCode
                         {
                             Code = existing.Code,
-                            Name = existing.Name,
+                            Name = form.Result.Name,
                             Notes = form.Result.Notes
                         };
                         _codeManager.Update(updated);
@@ -322,6 +328,8 @@ namespace StockDatasCollection.Forms
             }
 
             PopulateLoadGrid(points);
+            _loadedPoints = points;
+            RefreshChartHtml();
             string summary = $"共加载 {points.Count} 条记录。";
             if (errors.Count > 0) summary += $" {errors.Count} 个文件读取失败。";
             lblLoadStatus.Text = summary;
@@ -385,6 +393,163 @@ namespace StockDatasCollection.Forms
                     p.Volume, p.Turnover,
                     p.TradeDate, p.TradeTime);
             }
+        }
+
+        // ============================================================
+        // Tab 5 — 分时K线图（WebBrowser）
+        // ============================================================
+        private void btnRefreshChart_Click(object sender, EventArgs e)
+        {
+            RefreshChartHtml();
+        }
+
+        private void RefreshChartHtml()
+        {
+            if (InvokeRequired) { BeginInvoke(new Action(RefreshChartHtml)); return; }
+
+            if (_loadedPoints == null || _loadedPoints.Count == 0)
+            {
+                lblChartHint.Text = "暂无数据，请在「数据加载」页加载分时数据后刷新。";
+                webBrowserChart.DocumentText = BuildEmptyChartHtml();
+                return;
+            }
+
+            // 按股票分组，取数据量最多的一只用于绘图
+            var byStock = _loadedPoints
+                .GroupBy(p => p.StockCode)
+                .OrderByDescending(g => g.Count())
+                .FirstOrDefault();
+            if (byStock == null) return;
+
+            var points = byStock.OrderBy(p => p.TradeDate).ThenBy(p => p.TradeTime).ToList();
+            string title = $"{points[0].StockCode} {points[0].StockName} 分时";
+            lblChartHint.Text = $"共 {points.Count} 个分时点 · {title}";
+
+            string html = BuildChartHtml(points, title);
+            webBrowserChart.DocumentText = html;
+        }
+
+        private static string BuildEmptyChartHtml()
+        {
+            return @"<!DOCTYPE html><html><head><meta charset='utf-8'><title>分时K线</title></head>
+<body style='margin:0;font-family:Microsoft YaHei;background:#1a1a2e;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;'>
+<div>暂无数据，请在「数据加载」页加载分时数据后点击「刷新图表」。</div>
+</body></html>";
+        }
+
+        private static string BuildChartHtml(List<StockDataPoint> points, string title)
+        {
+            decimal preClose = 0;
+            decimal.TryParse(points[0].PreClosePrice, out preClose);
+            if (preClose <= 0) decimal.TryParse(points[0].OpenPrice, out preClose);
+
+            var times = new List<string>();
+            var prices = new List<decimal>();
+            var volumes = new List<long>();
+
+            foreach (var p in points)
+            {
+                string t = string.IsNullOrEmpty(p.TradeTime) ? p.TradeDate : (p.TradeDate + " " + p.TradeTime);
+                times.Add(t);
+                decimal price;
+                decimal.TryParse(p.CurrentPrice, out price);
+                prices.Add(price);
+                volumes.Add(p.Volume);
+            }
+
+            var sb = new StringBuilder();
+            sb.Append("var times = ");
+            sb.Append(ToJsonArray(times));
+            sb.Append("; var prices = ");
+            sb.Append(ToJsonArray(prices));
+            sb.Append("; var volumes = ");
+            sb.Append(ToJsonArray(volumes));
+            sb.Append("; var preClose = ");
+            sb.Append(preClose.ToString("G", System.Globalization.CultureInfo.InvariantCulture));
+            sb.Append(";");
+            string dataJson = sb.ToString();
+
+            string html = @"<!DOCTYPE html>
+<html>
+<head>
+<meta charset='utf-8'>
+<meta http-equiv='X-UA-Compatible' content='IE=Edge'>
+<title>分时K线</title>
+<script src='https://cdn.jsdelivr.net/npm/echarts@4.9.0/dist/echarts.min.js'></script>
+</head>
+<body style='margin:0;background:#1a1a2e;font-family:Microsoft YaHei;'>
+<div id='main' style='width:100%;height:100vh;'></div>
+<script>
+" + dataJson + @"
+var dom = document.getElementById('main');
+var chart = echarts.init(dom);
+var option = {
+  title: { text: '" + HttpUtility.JavaScriptStringEncode(title) + @"', left: 'center', textStyle: { color: '#e0e0e0', fontSize: 14 } },
+  tooltip: { trigger: 'axis' },
+  legend: { data: ['价格', '成交量'], top: 28, textStyle: { color: '#aaa' } },
+  grid: [ { left: '10%', right: '8%', top: '18%', height: '45%' }, { left: '10%', right: '8%', top: '70%', height: '22%' } ],
+  xAxis: [
+    { type: 'category', data: times, gridIndex: 0, axisLabel: { color: '#888' }, axisLine: { lineStyle: { color: '#444' } } },
+    { type: 'category', data: times, gridIndex: 1, axisLabel: { color: '#888' }, axisLine: { lineStyle: { color: '#444' } } }
+  ],
+  yAxis: [
+    { type: 'value', gridIndex: 0, scale: true, splitLine: { lineStyle: { color: '#333' } }, axisLabel: { color: '#888' } },
+    { type: 'value', gridIndex: 1, splitLine: { show: false }, axisLabel: { color: '#888' } }
+  ],
+  dataZoom: [ { type: 'inside', xAxisIndex: [0, 1], start: 0, end: 100 }, { type: 'slider', xAxisIndex: [0, 1], start: 0, end: 100, bottom: 8, height: 20 } ],
+  series: [
+    { name: '价格', type: 'line', data: prices, xAxisIndex: 0, yAxisIndex: 0, smooth: false, symbol: 'none', lineStyle: { color: '#00d4aa', width: 2 }, markLine: { silent: true, data: [{ yAxis: preClose, lineStyle: { color: '#666', type: 'dashed' }, label: { formatter: '昨收 ' + preClose, color: '#888' } }] } },
+    { name: '成交量', type: 'bar', data: volumes, xAxisIndex: 1, yAxisIndex: 1, itemStyle: { color: function(params) { return prices[params.dataIndex] >= preClose ? '#e74c3c' : '#00d4aa'; } } }
+  ]
+};
+chart.setOption(option);
+window.onresize = function() { chart.resize(); };
+</script>
+</body>
+</html>";
+            return html;
+        }
+
+        private static string ToJsonArray(IEnumerable<string> list)
+        {
+            var sb = new StringBuilder("[");
+            bool first = true;
+            foreach (var s in list)
+            {
+                if (!first) sb.Append(",");
+                sb.Append("\"").Append(HttpUtility.JavaScriptStringEncode(s ?? "")).Append("\"");
+                first = false;
+            }
+            sb.Append("]");
+            return sb.ToString();
+        }
+
+        private static string ToJsonArray(IEnumerable<decimal> list)
+        {
+            var sb = new StringBuilder("[");
+            bool first = true;
+            foreach (var v in list)
+            {
+                if (!first) sb.Append(",");
+                sb.Append(v.ToString("G", System.Globalization.CultureInfo.InvariantCulture));
+                first = false;
+            }
+            sb.Append("]");
+            return sb.ToString();
+        }
+
+        private static string ToJsonArray(IEnumerable<long> list)
+        {
+            var sb = new StringBuilder("[");
+            bool first = true;
+            foreach (var v in list)
+            {
+                if (!first) sb.Append(",");
+                sb.Append(v);
+                first = false;
+            }
+            sb.Append("]");
+            return sb.ToString();
         }
     }
 }

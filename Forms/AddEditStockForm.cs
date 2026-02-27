@@ -20,6 +20,7 @@ namespace StockDatasCollection.Forms
                 this.Text = "编辑股票";
                 txtCode.Text = existing.Code;
                 txtCode.ReadOnly = true;
+                txtName.Text = existing.Name ?? "";
                 txtNotes.Text = existing.Notes;
             }
             else
@@ -41,6 +42,7 @@ namespace StockDatasCollection.Forms
             Result = new StockCode
             {
                 Code = code,
+                Name = txtName.Text.Trim(),
                 Notes = txtNotes.Text.Trim()
             };
             DialogResult = DialogResult.OK;
