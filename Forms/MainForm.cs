@@ -141,16 +141,16 @@ namespace StockDatasCollection.Forms
         // Tab 2 — 数据采集
         // ============================================================
         /// <summary>
-        /// 判断当前时间是否在 A 股开盘时段：9:15-11:30、13:00-15:00。
+        /// 判断当前时间是否在采集有效时段（含 2 分钟缓冲）：上午 9:13-11:32、下午 12:58-15:02。
+        /// 仅在此时段内才实际发起采集。
         /// </summary>
         private static bool IsInTradingHours()
         {
-            var now = DateTime.Now;
-            var t = now.TimeOfDay;
-            var morningStart = new TimeSpan(9, 15, 0);
-            var morningEnd = new TimeSpan(11, 30, 0);
-            var afternoonStart = new TimeSpan(13, 0, 0);
-            var afternoonEnd = new TimeSpan(15, 0, 0);
+            var t = DateTime.Now.TimeOfDay;
+            var morningStart = new TimeSpan(9, 13, 0);
+            var morningEnd = new TimeSpan(11, 32, 0);
+            var afternoonStart = new TimeSpan(12, 58, 0);
+            var afternoonEnd = new TimeSpan(15, 2, 0);
             return (t >= morningStart && t <= morningEnd) || (t >= afternoonStart && t <= afternoonEnd);
         }
 
@@ -160,13 +160,6 @@ namespace StockDatasCollection.Forms
             if (codes.Count == 0)
             {
                 MessageBox.Show("请先添加关注的股票代码。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-
-            if (!IsInTradingHours())
-            {
-                MessageBox.Show("当前不在开盘时间段，无法开启自动采集。\n有效交易时间：9:15-11:30、13:00-15:00。",
-                    "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
@@ -204,6 +197,9 @@ namespace StockDatasCollection.Forms
             {
                 var codes = _codeManager.GetAll();
                 if (codes.Count == 0) return;
+
+                // 仅在实际开盘时段（含缓冲）内才发起采集，其余时间定时器照常运行但不采集
+                if (!IsInTradingHours()) return;
 
                 var points = await _collector.FetchAsync(codes);
                 _cache.AddRangeDedupeByMinute(points);
@@ -258,6 +254,12 @@ namespace StockDatasCollection.Forms
 
         private void btnArchiveNow_Click(object sender, EventArgs e)
         {
+            if (!IsInTradingHours())
+            {
+                MessageBox.Show("当前不在开盘时段，存档仅在有效时段内生效。\n有效时段：9:13-11:32、12:58-15:02。",
+                    "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
             _archiver.ArchiveDirectory = txtArchiveDir.Text;
             try
             {

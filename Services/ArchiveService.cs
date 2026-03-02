@@ -8,8 +8,8 @@ using StockDatasCollection.Models;
 namespace StockDatasCollection.Services
 {
     /// <summary>
-    /// Periodically archives cached stock data to binary files.
-    /// Archive path: {ArchiveDirectory}/{StockName}/{TradeDate}/{HH-mm-ss}.bin
+    /// Periodically archives cached stock data to binary files，按分钟级别存档，同一分钟不重复写入。
+    /// Archive path: {ArchiveDirectory}/{StockName}/{TradeDate}/{HHmm}.bin（如 0931.bin 表示 09:31 分钟）
     /// Binary format: magic "STDA" + version + stock code + record count + records.
     /// </summary>
     public class ArchiveService : IDisposable
@@ -47,12 +47,30 @@ namespace StockDatasCollection.Services
             NextArchiveTime = null;
         }
 
+        /// <summary>
+        /// 与主窗体一致的采集/存档有效时段（9:13-11:32、12:58-15:02），仅在此时段内执行存档。
+        /// </summary>
+        private static bool IsInTradingHours()
+        {
+            var t = DateTime.Now.TimeOfDay;
+            var morningStart = new TimeSpan(9, 13, 0);
+            var morningEnd = new TimeSpan(11, 32, 0);
+            var afternoonStart = new TimeSpan(12, 58, 0);
+            var afternoonEnd = new TimeSpan(15, 2, 0);
+            return (t >= morningStart && t <= morningEnd) || (t >= afternoonStart && t <= afternoonEnd);
+        }
+
         private void TryArchive(DataCacheService cache)
         {
             if (_archiving) return;
             _archiving = true;
             try
             {
+                if (!IsInTradingHours())
+                {
+                    OnArchiveCompleted("[" + DateTime.Now.ToString("HH:mm:ss") + "] 当前不在开盘时段，跳过本次存档。");
+                    return;
+                }
                 ArchiveNow(cache);
             }
             finally
@@ -62,7 +80,15 @@ namespace StockDatasCollection.Services
             }
         }
 
-        /// <summary>Immediately archive all cached data, then clear the cache.</summary>
+        /// <summary>从交易时间字符串得到分钟键 HHmm，用于按分钟存档、避免同一分钟重复写入。</summary>
+        private static string GetMinuteKeyFromTradeTime(string tradeTime)
+        {
+            if (string.IsNullOrWhiteSpace(tradeTime)) return "0000";
+            string s = tradeTime.Trim().Replace(":", "");
+            return s.Length >= 4 ? s.Substring(0, 4) : s.PadLeft(4, '0');
+        }
+
+        /// <summary>按分钟级别存档：同一股票、同一交易日、同一分钟只写一个文件（HHmm.bin），不重复写入。</summary>
         public void ArchiveNow(DataCacheService cache)
         {
             var snapshot = cache.GetSnapshot();
@@ -75,36 +101,38 @@ namespace StockDatasCollection.Services
             int totalWritten = 0;
             var errors = new List<string>();
 
-            // Group by StockName, then by TradeDate
             foreach (var kv in snapshot)
             {
                 string stockCode = kv.Key;
                 List<StockDataPoint> points = kv.Value;
                 if (points.Count == 0) continue;
 
-                // Group by (StockName, TradeDate)
+                // 按 (名称, 交易日期, 分钟) 分组，内存中已按分钟去重，每组最多一条
                 var groups = points
-                    .GroupBy(p => new { Name = SanitizeName(p.StockName), Date = p.TradeDate });
+                    .GroupBy(p => new
+                    {
+                        Name = SanitizeName(p.StockName),
+                        Date = string.IsNullOrWhiteSpace(p.TradeDate) ? DateTime.Now.ToString("yyyy-MM-dd") : p.TradeDate,
+                        Minute = GetMinuteKeyFromTradeTime(p.TradeTime)
+                    });
 
                 foreach (var group in groups)
                 {
                     string stockName = string.IsNullOrWhiteSpace(group.Key.Name) ? stockCode : group.Key.Name;
-                    string tradeDate = string.IsNullOrWhiteSpace(group.Key.Date)
-                        ? DateTime.Now.ToString("yyyy-MM-dd")
-                        : group.Key.Date;
-                    string timeStamp = DateTime.Now.ToString("HH-mm-ss");
+                    string tradeDate = group.Key.Date;
+                    string minuteFile = group.Key.Minute + ".bin"; // 如 0931.bin
 
                     string dir = Path.Combine(ArchiveDirectory, stockName, tradeDate);
                     try
                     {
                         Directory.CreateDirectory(dir);
-                        string filePath = Path.Combine(dir, timeStamp + ".bin");
+                        string filePath = Path.Combine(dir, minuteFile);
                         WriteArchiveFile(filePath, stockCode, group.ToList());
                         totalWritten += group.Count();
                     }
                     catch (Exception ex)
                     {
-                        errors.Add($"{stockName}: {ex.Message}");
+                        errors.Add($"{stockName}/{tradeDate}/{minuteFile}: {ex.Message}");
                     }
                 }
             }
@@ -112,7 +140,7 @@ namespace StockDatasCollection.Services
             cache.Clear();
             LastArchiveTime = DateTime.Now;
 
-            string msg = $"[{DateTime.Now:HH:mm:ss}] 存档完成，共写入 {totalWritten} 条记录。";
+            string msg = $"[{DateTime.Now:HH:mm:ss}] 按分钟存档完成，共写入 {totalWritten} 条记录（分钟级不重复）。";
             if (errors.Count > 0) msg += " 错误: " + string.Join("; ", errors);
             OnArchiveCompleted(msg);
         }
