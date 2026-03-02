@@ -1,0 +1,68 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<StockCodes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Stock>
+    <Code>sz000798</Code>
+    <Name>中水渔业</Name>
+    <Notes>中水渔业</Notes>
+  </Stock>
+  <Stock>
+    <Code>sh600176</Code>
+    <Name>中国巨石</Name>
+    <Notes>中国巨石</Notes>
+  </Stock>
+  <Stock>
+    <Code>sz002517</Code>
+    <Name>恺英网络</Name>
+    <Notes>恺英网络</Notes>
+  </Stock>
+  <Stock>
+    <Code>sh600111</Code>
+    <Name>北方稀土</Name>
+    <Notes>北方稀土</Notes>
+  </Stock>
+  <Stock>
+    <Code>sz002716</Code>
+    <Name>湖南白银</Name>
+    <Notes />
+  </Stock>
+  <Stock>
+    <Code>sh601899</Code>
+    <Name>紫金矿业</Name>
+    <Notes />
+  </Stock>
+  <Stock>
+    <Code>sh600760</Code>
+    <Name>中航沈飞</Name>
+    <Notes />
+  </Stock>
+  <Stock>
+    <Code>sz002607</Code>
+    <Name>中公教育</Name>
+    <Notes />
+  </Stock>
+  <Stock>
+    <Code>sz300528</Code>
+    <Name>幸福蓝海</Name>
+    <Notes />
+  </Stock>
+  <Stock>
+    <Code>sh603533</Code>
+    <Name>掌阅科技</Name>
+    <Notes />
+  </Stock>
+  <Stock>
+    <Code>sz002162</Code>
+    <Name>悦心健康</Name>
+    <Notes />
+  </Stock>
+  <Stock>
+    <Code>sh600559</Code>
+    <Name>老白干酒</Name>
+    <Notes />
+  </Stock>
+  <Stock>
+    <Code>sh600547</Code>
+    <Name>山东黄金</Name>
+    <Notes />
+  </Stock>
+</StockCodes>
