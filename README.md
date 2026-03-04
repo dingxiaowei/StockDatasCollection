@@ -25,8 +25,9 @@
 ![](pic/tjgf.jpg)
 ![](pic/njgy.jpg)
 * 提醒功能
-![](pic/4.png)
-![](pic/5.png)
+<img width="914" height="434" alt="643b5685b3eb9a2c8981d92cbac35ffa" src="https://github.com/user-attachments/assets/f0e43ed1-120d-48be-b53a-3e6a4293f987" />
+<img width="902" height="290" alt="224f3ce26dcb143cc71b1c4e41d4b9c1" src="https://github.com/user-attachments/assets/6b731256-0ea2-4048-99b9-1321eb7b91a5" />
+
 <img width="917" height="355" alt="b312317f2241ae4e9101085f4133bbee" src="https://github.com/user-attachments/assets/07c40490-d852-402b-838c-406a6a8106d9" />
 <img width="533" height="379" alt="0e7b902ec41e04e2ca53d4ae20a9bb70" src="https://github.com/user-attachments/assets/06689463-9e85-477d-8426-f31b14fca082" />
 
