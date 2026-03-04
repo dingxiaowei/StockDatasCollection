@@ -484,10 +484,10 @@ namespace StockDatasCollection.Forms
 
             var times = new List<string>();
             var prices = new List<decimal>();
-            var volumes = new List<long>();
-
             var avgPrices = new List<decimal>();
-            long prevCumulativeVol = 0;
+            var buy1Vols = new List<long>();
+            var sell1Vols = new List<long>();
+            var bidAskDelta = new List<long>();
             foreach (var p in points)
             {
                 string t = string.IsNullOrEmpty(p.TradeTime) ? p.TradeDate : (p.TradeDate + " " + p.TradeTime);
@@ -495,10 +495,6 @@ namespace StockDatasCollection.Forms
                 decimal price;
                 decimal.TryParse(p.CurrentPrice, out price);
                 prices.Add(price);
-                long deltaVol = p.Volume - prevCumulativeVol;
-                if (deltaVol < 0) deltaVol = p.Volume;
-                volumes.Add(deltaVol);
-                prevCumulativeVol = p.Volume;
                 // 分时均价 = 累计成交额 / 累计成交量（VWAP）
                 decimal turnover;
                 decimal.TryParse(p.Turnover, out turnover);
@@ -506,6 +502,10 @@ namespace StockDatasCollection.Forms
                     avgPrices.Add(Math.Round(turnover / p.Volume, 2));
                 else
                     avgPrices.Add(price);
+
+                buy1Vols.Add(p.Buy1Vol);
+                sell1Vols.Add(p.Sell1Vol);
+                bidAskDelta.Add(p.Buy1Vol - p.Sell1Vol);
             }
 
             // 计算 MACD: DIF = EMA12 - EMA26, DEA = EMA(DIF,9), Histogram = (DIF-DEA)*2
@@ -513,6 +513,8 @@ namespace StockDatasCollection.Forms
             var deaList = new List<decimal>();
             var macdList = new List<decimal>();
             CalcMACD(prices, 12, 26, 9, difList, deaList, macdList);
+            var buy1Ma = CalcSma(buy1Vols.Select(v => (decimal)v).ToList(), 10);
+            var sell1Ma = CalcSma(sell1Vols.Select(v => (decimal)v).ToList(), 10);
 
             // 检测顶背离 / 底背离
             var divPoints = DetectDivergences(prices, macdList, times);
@@ -522,10 +524,18 @@ namespace StockDatasCollection.Forms
             sb.Append(ToJsonArray(times));
             sb.Append("; var prices = ");
             sb.Append(ToJsonArray(prices));
-            sb.Append("; var volumes = ");
-            sb.Append(ToJsonArray(volumes));
             sb.Append("; var avgPrices = ");
             sb.Append(ToJsonArray(avgPrices));
+            sb.Append("; var buy1Vols = ");
+            sb.Append(ToJsonArray(buy1Vols));
+            sb.Append("; var sell1Vols = ");
+            sb.Append(ToJsonArray(sell1Vols));
+            sb.Append("; var buy1Ma = ");
+            sb.Append(ToJsonArray(buy1Ma));
+            sb.Append("; var sell1Ma = ");
+            sb.Append(ToJsonArray(sell1Ma));
+            sb.Append("; var bidAskDelta = ");
+            sb.Append(ToJsonArray(bidAskDelta));
             sb.Append("; var preClose = ");
             sb.Append(preClose.ToString("G", System.Globalization.CultureInfo.InvariantCulture));
             sb.Append("; var dif = ");
@@ -554,37 +564,45 @@ namespace StockDatasCollection.Forms
 var dom = document.getElementById('main');
 var chart = echarts.init(dom);
 var macdColors = macd.map(function(v){ return v >= 0 ? '#e74c3c' : '#00d4aa'; });
+var deltaColors = bidAskDelta.map(function(v){ return v >= 0 ? '#e74c3c' : '#00d4aa'; });
 var option = {
   title: { text: '" + HttpUtility.JavaScriptStringEncode(title) + @"', left: 'center', textStyle: { color: '#e0e0e0', fontSize: 14 } },
   tooltip: { trigger: 'axis', axisPointer: { link: {xAxisIndex: 'all'}, type: 'cross' } },
   axisPointer: { link: {xAxisIndex: 'all'}, lineStyle: { color: '#888', width: 1, type: 'dashed' } },
-  legend: { data: ['价格', '均价', '成交量', 'DIF', 'DEA', 'MACD'], top: 28, textStyle: { color: '#aaa' } },
+  legend: { data: ['价格', '均价', '买一量', '卖一量', '买一均线', '卖一均线', '买卖差值', 'DIF', 'DEA', 'MACD'], top: 28, textStyle: { color: '#aaa' } },
   grid: [
-    { left: '10%', right: '8%', top: '14%', height: '32%' },
-    { left: '10%', right: '8%', top: '50%', height: '15%' },
-    { left: '10%', right: '8%', top: '70%', height: '18%' }
+    { left: '10%', right: '8%', top: '12%', height: '28%' },
+    { left: '10%', right: '8%', top: '44%', height: '16%' },
+    { left: '10%', right: '8%', top: '63%', height: '10%' },
+    { left: '10%', right: '8%', top: '76%', height: '14%' }
   ],
   xAxis: [
     { type: 'category', data: times, gridIndex: 0, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#444' } }, axisPointer: { show: true, lineStyle: { color: '#888', width: 1, type: 'dashed' } } },
     { type: 'category', data: times, gridIndex: 1, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#444' } }, axisPointer: { show: true, lineStyle: { color: '#888', width: 1, type: 'dashed' } } },
-    { type: 'category', data: times, gridIndex: 2, axisLabel: { color: '#888', fontSize: 10 }, axisLine: { lineStyle: { color: '#444' } }, axisPointer: { show: true, lineStyle: { color: '#888', width: 1, type: 'dashed' } } }
+    { type: 'category', data: times, gridIndex: 2, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#444' } }, axisPointer: { show: true, lineStyle: { color: '#888', width: 1, type: 'dashed' } } },
+    { type: 'category', data: times, gridIndex: 3, axisLabel: { color: '#888', fontSize: 10 }, axisLine: { lineStyle: { color: '#444' } }, axisPointer: { show: true, lineStyle: { color: '#888', width: 1, type: 'dashed' } } }
   ],
   yAxis: [
     { type: 'value', gridIndex: 0, scale: true, splitLine: { lineStyle: { color: '#333' } }, axisLabel: { color: '#888' } },
-    { type: 'value', gridIndex: 1, splitLine: { show: false }, axisLabel: { color: '#888' } },
-    { type: 'value', gridIndex: 2, scale: true, splitLine: { lineStyle: { color: '#222' } }, axisLabel: { color: '#888' } }
+    { type: 'value', gridIndex: 1, scale: true, splitLine: { lineStyle: { color: '#222' } }, axisLabel: { color: '#888' } },
+    { type: 'value', gridIndex: 2, splitLine: { show: false }, axisLabel: { color: '#888' } },
+    { type: 'value', gridIndex: 3, scale: true, splitLine: { lineStyle: { color: '#222' } }, axisLabel: { color: '#888' } }
   ],
   dataZoom: [
-    { type: 'inside', xAxisIndex: [0, 1, 2], start: 0, end: 100 },
-    { type: 'slider', xAxisIndex: [0, 1, 2], start: 0, end: 100, bottom: 8, height: 20 }
+    { type: 'inside', xAxisIndex: [0, 1, 2, 3], start: 0, end: 100 },
+    { type: 'slider', xAxisIndex: [0, 1, 2, 3], start: 0, end: 100, bottom: 6, height: 16 }
   ],
   series: [
     { name: '价格', type: 'line', data: prices, xAxisIndex: 0, yAxisIndex: 0, smooth: false, symbol: 'none', lineStyle: { color: '#00d4aa', width: 2 }, markLine: { silent: true, data: [{ yAxis: preClose, lineStyle: { color: '#666', type: 'dashed' }, label: { formatter: '昨收 ' + preClose, color: '#888' } }] }, markPoint: { data: divPoints } },
     { name: '均价', type: 'line', data: avgPrices, xAxisIndex: 0, yAxisIndex: 0, smooth: true, symbol: 'none', lineStyle: { color: '#f5c842', width: 1.5, type: 'solid' } },
-    { name: '成交量', type: 'bar', data: volumes, xAxisIndex: 1, yAxisIndex: 1, itemStyle: { color: function(params) { var i = params.dataIndex; var prev = i > 0 ? prices[i-1] : preClose; return prices[i] >= prev ? '#e74c3c' : '#00d4aa'; } } },
-    { name: 'DIF', type: 'line', data: dif, xAxisIndex: 2, yAxisIndex: 2, smooth: false, symbol: 'none', lineStyle: { color: '#f5a623', width: 1.5 } },
-    { name: 'DEA', type: 'line', data: dea, xAxisIndex: 2, yAxisIndex: 2, smooth: false, symbol: 'none', lineStyle: { color: '#4a90d9', width: 1.5 } },
-    { name: 'MACD', type: 'bar', data: macd, xAxisIndex: 2, yAxisIndex: 2, itemStyle: { color: function(params) { return macdColors[params.dataIndex]; } } }
+    { name: '买一量', type: 'bar', data: buy1Vols, xAxisIndex: 1, yAxisIndex: 1, barWidth: '38%', barGap: '20%', itemStyle: { color: '#e74c3c' } },
+    { name: '卖一量', type: 'bar', data: sell1Vols, xAxisIndex: 1, yAxisIndex: 1, barWidth: '38%', itemStyle: { color: '#00d4aa' } },
+    { name: '买一均线', type: 'line', data: buy1Ma, xAxisIndex: 1, yAxisIndex: 1, smooth: true, symbol: 'none', lineStyle: { color: '#ffb84d', width: 1.2 } },
+    { name: '卖一均线', type: 'line', data: sell1Ma, xAxisIndex: 1, yAxisIndex: 1, smooth: true, symbol: 'none', lineStyle: { color: '#4db8ff', width: 1.2 } },
+    { name: '买卖差值', type: 'bar', data: bidAskDelta, xAxisIndex: 2, yAxisIndex: 2, barWidth: '60%', itemStyle: { color: function(params) { return deltaColors[params.dataIndex]; } } },
+    { name: 'DIF', type: 'line', data: dif, xAxisIndex: 3, yAxisIndex: 3, smooth: false, symbol: 'none', lineStyle: { color: '#f5a623', width: 1.5 } },
+    { name: 'DEA', type: 'line', data: dea, xAxisIndex: 3, yAxisIndex: 3, smooth: false, symbol: 'none', lineStyle: { color: '#4a90d9', width: 1.5 } },
+    { name: 'MACD', type: 'bar', data: macd, xAxisIndex: 3, yAxisIndex: 3, itemStyle: { color: function(params) { return macdColors[params.dataIndex]; } } }
   ]
 };
 chart.setOption(option);
@@ -619,6 +637,22 @@ window.onresize = function() { chart.resize(); };
                 dea.Add(Math.Round(emaDea, 4));
                 macd.Add(Math.Round((d - emaDea) * 2, 4));
             }
+        }
+
+        /// <summary>简单移动平均线（SMA）。</summary>
+        private static List<decimal> CalcSma(List<decimal> values, int period)
+        {
+            var result = new List<decimal>(values.Count);
+            if (values.Count == 0 || period <= 0) return result;
+            decimal sum = 0;
+            for (int i = 0; i < values.Count; i++)
+            {
+                sum += values[i];
+                if (i >= period) sum -= values[i - period];
+                int count = i + 1 < period ? i + 1 : period;
+                result.Add(Math.Round(sum / count, 2));
+            }
+            return result;
         }
 
         /// <summary>
